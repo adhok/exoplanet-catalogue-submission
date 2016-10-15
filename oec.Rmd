@@ -1,0 +1,287 @@
+---
+title: "Analysis"
+author: "Pradeep Adhokshaja"
+date: "24 September 2016"
+output: html_document
+---
+
+## Loading the Libraries
+
+We load the necessary tools we will need for our analysis.
+
+```{r}
+library(plotly)
+library(dplyr)
+library(GGally)
+```
+
+## Data Set
+
+What does the dataset contain?
+
+```{r}
+
+oec <- read.csv('oec.csv',stringsAsFactors = F,header = T)
+str(oec)
+oec$TypeFlag <- ifelse(oec$TypeFlag==0,'no known stellar binary companion',oec$TypeFlag)
+oec$TypeFlag <- ifelse(oec$TypeFlag==1,'P-type binary (circumbinary)',oec$TypeFlag)
+oec$TypeFlag <- ifelse(oec$TypeFlag==2,'S-type binary',oec$TypeFlag)
+oec$TypeFlag <- ifelse(oec$TypeFlag==3,'orphan planet (no star)',oec$TypeFlag)
+
+
+```
+
+## What are the methods used to discover exoplanets?
+
+
+
+```{r}
+levels(as.factor(oec$DiscoveryMethod))
+```
+
+**How many planets were discovered using each method?**
+
+```{r}
+oec %>% group_by(DiscoveryMethod) %>% summarise(number_discovered=n())
+```
+
+## What are the distribution of Jupiter Masses of these planets?
+
+```{r}
+plot_ly(subset(oec,PlanetaryMassJpt<50), x = PlanetaryMassJpt, color = TypeFlag , type = "box")
+
+```
+
+Some outliers were removed to make the plot more readable.
+
+## Discovery methods by Temperature
+
+What distributions of temperatures are needed for each discovery method?
+
+```{r}
+plot_ly((oec), x = SurfaceTempK, color = DiscoveryMethod , type = "box")
+
+```
+
+
+We see that hotter planets were discovered by the imaging method. Microlensing was used for colder planets.
+
+## Frequency of Discovery
+
+How many planets have been discovered on an yearly basis? We will start from the Year 1994
+
+```{r}
+temp <- oec %>% select(TypeFlag,DiscoveryYear)
+temp<- na.omit(temp)
+temp <- temp %>%  group_by(DiscoveryYear,TypeFlag) %>% summarise(n=n())
+temp$TypeFlag <- as.factor(temp$TypeFlag)
+temp <- subset(temp,DiscoveryYear>1993)
+ggplotly(ggplot(temp, aes(x=DiscoveryYear, y=n, colour=TypeFlag)) + geom_line()+geom_point(shape=21,size=4))
+
+
+
+
+```
+
+We see that the trend of discovery has been increasing. Most of the planets that were discovered were of the type ***
+no known stellar binary companion***. Its pretty hard to see much about the other planets. Let's filter the data so that we can see the trends of the others' more clearly.
+
+```{r}
+temp <- subset(temp,TypeFlag!='no known stellar binary companion')
+ggplotly(ggplot(temp, aes(x=DiscoveryYear, y=n, colour=TypeFlag)) + geom_line()+geom_point(shape=21,size=4))
+
+```
+
+
+
+
+
+## Does discovery method change for different kinds of planets?
+
+
+```{r}
+temp <- oec %>% select(TypeFlag,DiscoveryMethod) %>% group_by(TypeFlag,DiscoveryMethod) %>% summarise(n=n())
+temp$DiscoveryMethod <- as.factor(temp$DiscoveryMethod)
+temp <- subset(temp,n!=0)
+ggplot(temp, aes(x=DiscoveryMethod, y=log(n), fill=TypeFlag)) +
+geom_bar(position="dodge",stat = 'identity')+theme(axis.text.x = element_text(angle=90, vjust=1))
+```
+
+We see that most planets with no known stellar binary companion were discovered by the transit method. The log() scale has been used here so that the heights of the bars are more distinguishable.
+
+## Relationship between star mass and star temperature
+
+We will use the log transformation to ensure that we get readable plot.
+
+```{r}
+temp <- select(oec,c(HostStarMassSlrMass,HostStarTempK))
+temp <- na.omit(temp)
+ggplot(temp,aes(x=log(HostStarMassSlrMass),y=log(HostStarTempK)))+geom_point(colour="grey60") +
+stat_smooth(method=lm, se=FALSE, colour="black")
+
+cor(log(temp$HostStarMassSlrMass),log(temp$HostStarTempK))
+summary(lm(log(temp$HostStarTempK)~log(temp$HostStarMassSlrMass)))
+```
+
+We get a fairly high correlation of 0.66. As the mass of the star increases, the temperature of the star also increases. As per the linear fit, the equation would be $log(Temperature(Kelvin))= 0.312*log(Mass(Solar))+8.619$
+
+## Eccentricity, Period and Mass
+
+Eccentricity of 0 denotes a perfect circle. A value lies between 0 and 1. Does eccentricity affect the planet's period of revolution? We will check this out by removing outliers.
+
+```{r}
+temp <- oec %>% select(Eccentricity,PeriodDays,PlanetaryMassJpt)
+qnt <- quantile(temp$PeriodDays, probs=c(.25, .75), na.rm = T)
+H <- 1.5 * IQR(temp$PeriodDays, na.rm =T)
+
+temp$PeriodDays <- ifelse(temp$PeriodDays<(qnt[1]-H),NA,temp$PeriodDays)
+temp$PeriodDays <- ifelse(temp$PeriodDays>(qnt[2]+H),NA,temp$PeriodDays)
+temp <- na.omit(temp)
+ggplotly(ggplot(temp, aes(x=(PeriodDays), y=(Eccentricity))) + geom_point(colour="grey60") +stat_smooth(method=loess, se=FALSE, colour="black"))
+
+cor(temp$Eccentricity,temp$PeriodDays)
+
+```
+
+We see a small correlation between period of the planet and its eccentricity.This suggests that there is not a linear relationship between these two variables.
+
+**Is there a relationship between eccentricity and mass of the planet?**
+
+```{r}
+temp <- oec %>% select(Eccentricity,PeriodDays,PlanetaryMassJpt)
+
+qnt <- quantile(temp$PlanetaryMassJpt, probs=c(.25, .75), na.rm = T)
+H <- 1.5 * IQR(temp$PlanetaryMassJpt, na.rm =T)
+temp$PlanetaryMassJpt <- ifelse(temp$PlanetaryMassJpt<(qnt[1]-H),NA,temp$PlanetaryMassJpt)
+temp$PlanetaryMassJpt <- ifelse(temp$PlanetaryMassJpt>(qnt[2]+H),NA,temp$PlanetaryMassJpt)
+temp <- na.omit(temp)
+ggplotly(ggplot(temp, aes(x=PlanetaryMassJpt, y=Eccentricity)) + geom_point(colour="grey60") +stat_smooth(method=loess, se=FALSE, colour="black"))
+cor(temp$Eccentricity,temp$PlanetaryMassJpt)
+
+
+```
+
+There is a low correlation here as well.
+
+**What about mass of planet and period?**
+
+```{r}
+temp <- oec %>% select(Eccentricity,PeriodDays,PlanetaryMassJpt)
+
+qnt <- quantile(temp$PlanetaryMassJpt, probs=c(.25, .75), na.rm = T)
+H <- 1.5 * IQR(temp$PlanetaryMassJpt, na.rm =T)
+temp$PlanetaryMassJpt <- ifelse(temp$PlanetaryMassJpt<(qnt[1]-H),NA,temp$PlanetaryMassJpt)
+temp$PlanetaryMassJpt <- ifelse(temp$PlanetaryMassJpt>(qnt[2]+H),NA,temp$PlanetaryMassJpt)
+
+qnt <- quantile(temp$PeriodDays, probs=c(.25, .75), na.rm = T)
+H <- 1.5 * IQR(temp$PeriodDays, na.rm =T)
+temp$PeriodDays <- ifelse(temp$PeriodDays<(qnt[1]-H),NA,temp$PeriodDays)
+temp$PeriodDays <- ifelse(temp$PeriodDays>(qnt[2]+H),NA,temp$PeriodDays)
+
+temp <- na.omit(temp)
+
+ggplotly(ggplot(temp, aes(x=PlanetaryMassJpt, y=PeriodDays)) + geom_point(colour="grey60") +stat_smooth(method=loess, se=FALSE, colour="black"))
+cor(temp$PeriodDays,temp$PlanetaryMassJpt)
+
+```
+
+There is not much to see here either. This could be attributed to Kepler's Third Law of planetary motion, which states that the period of revolution is proportional to the distance of the planet in question from its host star.
+
+## Relationship between Host star's temperature and the planets' equilibrium temperature
+
+```{r}
+temp<- na.omit(oec %>% select(HostStarTempK,SurfaceTempK))
+qnt <- quantile(temp$HostStarTempK, probs=c(.25, .75), na.rm = T)
+H <- 1.5 * IQR(temp$HostStarTempK, na.rm =T)
+temp$HostStarTempK <- ifelse(temp$HostStarTempK<(qnt[1]-H),NA,temp$HostStarTempK)
+temp$HostStarTempK <- ifelse(temp$HostStarTempK>(qnt[2]+H),NA,temp$HostStarTempK)
+
+qnt <- quantile(temp$SurfaceTempK, probs=c(.25, .75), na.rm = T)
+H <- 1.5 * IQR(temp$SurfaceTempK, na.rm =T)
+temp$SurfaceTempK <- ifelse(temp$SurfaceTempK<(qnt[1]-H),NA,temp$SurfaceTempK)
+temp$SurfaceTempK <- ifelse(temp$SurfaceTempK>(qnt[2]+H),NA,temp$SurfaceTempK)
+temp <- na.omit(temp)
+
+ggplot(temp, aes(x=(HostStarTempK), y=(SurfaceTempK))) + geom_point(colour="grey60") +
+stat_smooth(method=loess, se=T, colour="black")
+cor(temp$HostStarTempK,temp$SurfaceTempK)
+```
+
+There seems to be little correlation. The relationship is certainly non linear.
+
+
+## Metallicity
+
+It is the property that evaluates the proportion of the material of a celestial object that is an element other than hydrogen or helium.
+
+**How are they distributed?**
+
+```{r}
+
+
+h <- ggplot((oec), aes(x=HostStarMetallicity))
+ggplotly(h + geom_histogram(binwidth=0.1, fill="white", colour="black"))
+summary(oec$HostStarMetallicity)
+```
+
+We see that the range of metallicity is from  -2.09 to 0.56. Negative metallicity means having metallicity lower than that of the Sun.
+
+We will analyze this further.
+
+**Does the metallicity of a star related to its temperature?**
+
+
+It this different for different  radii?
+Let's divide this dataset into three parts so that we can visualize it more clearly
+<li>Radii between 0 -10</li>
+<li>Radii between 10 and 50 </li>
+<li> Radii lesser than 2 </li>
+
+
+
+
+```{r}
+temp <- oec %>% select(HostStarTempK,HostStarMetallicity,HostStarRadiusSlrRad)
+temp <- na.omit(temp)
+temp_1 <- filter(temp,HostStarRadiusSlrRad>10)
+temp_2 <- filter(temp,HostStarRadiusSlrRad<10)
+temp_3 <- filter(temp,HostStarRadiusSlrRad<2)
+plot_ly(temp_1, x = HostStarRadiusSlrRad, y = HostStarMetallicity ,color = HostStarTempK , mode ="markers",text=paste('Temperature', HostStarTempK))
+plot_ly(temp_2, x = HostStarRadiusSlrRad, y = HostStarMetallicity ,color = HostStarTempK , mode ="markers",text=paste('Temperature', HostStarTempK))
+plot_ly(temp_3, x = HostStarRadiusSlrRad, y = HostStarMetallicity ,color = HostStarTempK , mode ="markers",text=paste('Temperature', HostStarTempK))
+
+```
+
+From the above plots we see  that hotter stars tend to have radii ranging between 0.8 to 2 Solar Radius. The cooler stars tend to fall outside this range. The metallicity of stars seem to be independent of its temperature and radii.
+
+## Relationship between SemiMajor Axis and Period
+
+We will apply the log transformation to the data
+
+
+```{r}
+temp <- select(oec,c(SemiMajorAxisAU,PeriodDays))
+temp <- na.omit(temp)
+ggplot(temp, aes(x=log(SemiMajorAxisAU), y=log(PeriodDays)))+geom_point()+stat_smooth(method=loess, level=0.95)
+summary(lm(log(temp$PeriodDays)~log(temp$SemiMajorAxisAU)))
+```
+
+We see that the relationship is fairly linear. The equation to predict the Period of a planet from the length of its semi-major axis would be $log(Period(Days))=1.47*log(SemiMajorAxis(AU))-5.87$
+
+
+## Relationship between Radius and Mass of planet
+
+```{r}
+temp <- select(oec,c(RadiusJpt,PlanetaryMassJpt))
+temp <- na.omit(temp)
+ggplot(temp, aes(x=log(RadiusJpt), y=log(PlanetaryMassJpt)))+geom_point()+stat_smooth(method=lm, level=0.95)
+summary(lm(log(temp$PlanetaryMassJpt)~log(temp$RadiusJpt)))
+cor(log(temp$PlanetaryMassJpt),log(temp$RadiusJpt))
+
+```
+
+The log transformed correlation is 0.87. The linear model to predict Planetary Mass from Radius would be
+$log(PlanetaryMass(Jupiter Units))=2.21*log(Radius(Jupiter Radii))-0.361$
+
+* * *
+
